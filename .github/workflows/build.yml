@@ -2,8 +2,6 @@ name: Build TWRP (uws6152_1h10_go / M92K-W527)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
 
 permissions:
   contents: write
@@ -35,12 +33,17 @@ jobs:
           for t in git make gcc g++ zip unzip bc python3; do command -v $t || echo "MISSING $t"; done
           (command -v python2 || command -v python2.7 || echo "no python2 (will warn later)")
 
-      - name: Add swap (soong needs RAM)
+      - name: Make sure swap exists
+        continue-on-error: true
         run: |
-          sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          free -h
+          sudo swapon --show || true
+          if [ "$(free -m | awk '/Swap:/{print $2}')" -lt 2048 ]; then
+            sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192 || true
+            sudo chmod 600 /swapfile2 || true
+            sudo mkswap /swapfile2 || true
+            sudo swapon /swapfile2 || true
+          fi
           free -h
 
       - name: Install repo tool
@@ -51,6 +54,7 @@ jobs:
           git config --global user.name "twrp-builder"
           git config --global user.email "twrp-builder@users.noreply.github.com"
           git config --global color.ui false
+          ~/bin/repo --version || python3 ~/bin/repo --version
 
       - name: repo init and sync (twrp-9.0)
         run: |
@@ -58,7 +62,7 @@ jobs:
           cd workspace
           ~/bin/repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni -b twrp-9.0
           ~/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle
-        timeout-minutes: 150
+        timeout-minutes: 180
 
       - name: Clone device tree into AOSP tree
         run: |
@@ -85,7 +89,7 @@ jobs:
           IMG=out/target/product/uws6152_1h10_go/recovery.img
           ls -l $IMG
           sha256sum $IMG | tee recovery.img.sha256
-          echo "### recovery.img 已生成" >> $GITHUB_STEP_SUMMARY
+          echo "### recovery.img OK" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat recovery.img.sha256 >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -99,17 +103,3 @@ jobs:
             workspace/out/target/product/uws6152_1h10_go/recovery.img
             workspace/recovery.img.sha256
           if-no-files-found: error
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        continue-on-error: true
-        with:
-          files: |
-            workspace/out/target/product/uws6152_1h10_go/recovery.img
-            workspace/recovery.img.sha256
-          tag_name: build-${{ github.run_number }}
-          name: TWRP-recovery-${{ github.run_number }}
-          body: |
-            uws6152_1h10_go (M92K / W527) TWRP recovery 自动编译产物
-            原厂内核 md5: 667b87df745d5a4f936ad860ee780be5 (来自 boot.bin，未修改)
-            只刷 recovery 分区，不动 boot/misc/vbmeta。
