@@ -64,10 +64,11 @@ jobs:
           ~/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle
         timeout-minutes: 180
 
-      - name: Clone device tree into AOSP tree
+      - name: Copy device tree into AOSP tree
         run: |
-          git clone https://github.com/${{ github.repository }} -b ${{ github.ref_name }} ./device/sprd/uws6152_1h10_go
-        working-directory: workspace
+          mkdir -p workspace/device/sprd/uws6152_1h10_go
+          rsync -a --exclude '.git' --exclude 'workspace' ./ workspace/device/sprd/uws6152_1h10_go/
+          ls -la workspace/device/sprd/uws6152_1h10_go | head -20
 
       - name: Switch python to python2 (AOSP 9 tools need it)
         run: |
