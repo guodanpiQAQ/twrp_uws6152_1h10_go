@@ -91,8 +91,8 @@ BOARD_VNDK_VERSION := current
 TWRP_INCLUDE_LOGCAT := true
 TARGET_USES_LOGD := true
 
-# Sreen
-BOARD_HAS_FLIPPED_SCREEN:= true
+# Display (panel mounted 180 deg; TWRP must rotate its UI)
+TARGET_RECOVERY_DEFAULT_ROTATION := ROTATION_DOWN
 
 # Security patch level
 VENDOR_SECURITY_PATCH := 2021-08-01
@@ -122,7 +122,7 @@ TW_INPUT_BLACKLIST := "hbtp_vm"
 TW_USE_TOOLBOX := true
 TW_BRIGHTNESS_PATH := "/sys/devices/platform/sprd_backlight/backlight/sprd_backlight/brightness"
 TW_CUSTOM_CPU_TEMP_PATH := /sys/devices/virtual/thermal/thermal_zone0/temp
-TW_DEVICE_VERSION := M92K_20260929
+TW_DEVICE_VERSION := M92K_20260929_r2
 TW_EXCLUDE_DEFAULT_USB_INIT := true
 TW_MAX_BRIGHTNESS := 255
 TW_DEFAULT_BRIGHTNESS := 100
