@@ -1,0 +1,98 @@
+name: Build KSU kernel (uws6152 / M92K)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout build repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git make bc bison flex libssl-dev build-essential libyaml-dev python3 zip
+
+      - name: Get GCC 4.9 toolchain
+        run: |
+          mkdir -p $HOME/toolchains
+          cd $HOME/toolchains
+          git clone --depth=1 --branch=W20.13.3 --filter=blob:none --no-checkout \
+            https://github.com/deadman96385/jingpad_android_bsp.git tc
+          cd tc
+          git sparse-checkout init --cone
+          git sparse-checkout set toolchain/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+          git checkout
+          mv toolchain/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 ../gcc49
+          cd .. && rm -rf tc
+          chmod -R a+x gcc49/bin
+          echo "$HOME/toolchains/gcc49/bin" >> $GITHUB_PATH
+
+      - name: Verify toolchain
+        run: |
+          aarch64-linux-android-gcc --version | head -2
+          aarch64-linux-android-gcc -fstack-protector-strong -c -x c /dev/null -o /dev/null
+
+      - name: Clone kernel source (with KernelSU submodule)
+        run: |
+          git clone --depth=1 --branch test https://github.com/ZeroDreamCat/android_uws6152_4.14.98.git kernel
+          cd kernel
+          git submodule update --init --depth=1 || (rm -rf KernelSU && git clone --depth=1 https://github.com/Baka-SU/BakaSU.git KernelSU)
+          echo "--- KernelSU dir ---"
+          ls KernelSU | head -10
+          grep -n kernelsu drivers/Makefile drivers/Kconfig
+
+      - name: Configure kernel
+        run: |
+          cd kernel
+          cp ../config/m92k_defconfig arch/arm64/configs/m92k_defconfig
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          make m92k_defconfig
+          scripts/config --disable CONFIG_APPENDED_DTB
+          scripts/config --disable CONFIG_EFI
+          scripts/config --disable CONFIG_EFI_STUB
+          scripts/config --enable CONFIG_OVERLAY_FS
+          scripts/config --enable CONFIG_KSU
+          scripts/config --enable CONFIG_KSU_MANUAL_HOOK
+          scripts/config --disable CONFIG_DEBUG_INFO
+          scripts/config --set-str CONFIG_LOCALVERSION ""
+          sed -i 's/^EXTRAVERSION = .*/EXTRAVERSION =/' Makefile
+          sed -i '/yamltree\.o/d' scripts/dtc/Makefile || true
+          sed -i 's/dt_to_yaml(/\/\/ dt_to_yaml(/g' scripts/dtc/dtc.c || true
+          sed -i '/ifdef CONFIG_CC_STACKPROTECTOR_STRONG/{n;s/stackp-flag :=.*/stackp-flag := -fstack-protector-strong/}' Makefile || true
+          sed -i '/ifdef stackp-name/,/endif/{s/exit 1/true/}' Makefile || true
+          sed -i '/ifdef stackp-check/,/endif/{s/exit 1/true/}' Makefile || true
+          make olddefconfig
+          echo '--- final config ---'
+          grep -E 'CONFIG_KSU|CONFIG_OVERLAY_FS|CONFIG_KPROBES|CONFIG_LOCALVERSION=|CONFIG_MODVERSIONS' .config
+          grep -E '^EXTRAVERSION' Makefile
+
+      - name: Build Image.gz
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          KCFLAGS="-Wno-error=sizeof-pointer-memaccess -Wno-error=array-bounds -Wno-error=missing-braces -Wno-error=format"
+          make -j$(nproc) KCFLAGS="$KCFLAGS" Image.gz 2>&1 | tee build.log | tail -40
+          ls -l arch/arm64/boot/
+
+      - name: Package artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          cp kernel/arch/arm64/boot/Image.gz out/ 2>/dev/null || true
+          cp kernel/arch/arm64/boot/Image out/ 2>/dev/null || true
+          cp kernel/.config out/config.txt 2>/dev/null || true
+          cp kernel/build.log out/build.log 2>/dev/null || true
+          ls -l out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksu-kernel
+          path: out/
+          if-no-files-found: warn
