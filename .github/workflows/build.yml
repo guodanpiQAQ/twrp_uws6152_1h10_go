@@ -53,6 +53,10 @@ jobs:
             rsync -a --exclude ".git" --exclude "workspace" /src/ device/sprd/uws6152_1h10_go/
             ls device/sprd/uws6152_1h10_go
 
+            echo "--- applying vibrator (input FF) patch ---"
+            python3 device/sprd/uws6152_1h10_go/patches/apply.py
+            grep -n "ff_vibrator_play" bootable/recovery/minuitwrp/events.cpp | head -5
+
             source build/envsetup.sh
             export ALLOW_MISSING_DEPENDENCIES=true
             lunch omni_uws6152_1h10_go-eng
